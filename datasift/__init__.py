@@ -25,7 +25,6 @@ Copyright (C) 2012 MediaSift Ltd. All Rights Reserved.
 import sys, os, urllib, urllib2, json, thread, threading, types
 from datetime import datetime
 import __builtin__
-from lfcore.logconf import getLogger
 
 __author__  = "Stuart Dallas <stuart@3ft9.com>"
 __status__  = "beta"
@@ -44,7 +43,6 @@ USER_AGENT      = 'DataSiftPython/%s' % (__version__)
 API_BASE_URL    = 'api.datasift.com/'
 STREAM_BASE_URL = 'stream.datasift.com/'
 
-LOG = getLogger(__name__)
 #-----------------------------------------------------------------------------
 # Check for SSL support.
 #-----------------------------------------------------------------------------
