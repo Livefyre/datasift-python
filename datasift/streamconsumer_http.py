@@ -3,10 +3,12 @@
 from threading import Thread
 from time import sleep
 import time
-import socket, select, re, platform
-from urlparse import urlparse
-from lfcore.logconf import getLogger
-from datasift import *
+from datasift import StreamConsumer
+import logging
+import urllib2
+import json
+
+LOG = logging.getLogger(__name__)
 
 # Try to import ssl for SSLError, fake it if not available
 try:
@@ -74,13 +76,13 @@ class StreamConsumer_HTTP(StreamConsumer):
         self._thread.join(timeout)
         return True
 
-    def add_hash(self, hash):
+    def add_hash(self, hash): #@ReservedAssignment
         self.add_or_remove_hash(hash, is_add=True)
     
-    def remove_hash(self, hash):
+    def remove_hash(self, hash): #@ReservedAssignment
         self.add_or_remove_hash(hash, is_add=False)
         
-    def add_or_remove_hash(self, hash, is_add):
+    def add_or_remove_hash(self, hash, is_add): #@ReservedAssignment
         """Attempts to add or remove tracking for the specified hash.
         If that hash is already being tracked and addition is requested, or if
         that hash is not currently tracked and removal is requested, has no effect
@@ -120,7 +122,6 @@ class StreamConsumer_HTTP(StreamConsumer):
         new_thread.start()
         # Ensure that the other thread is active before closing
         # the current thread and swapping the new one in its place.
-        # TODO: Error handling for the case of it never becoming active.
         while not new_thread._has_connected:
             time.sleep(1)
         # Close the current thread, and swap the new one into its place.
@@ -220,7 +221,7 @@ class StreamConsumer_HTTP_Thread(Thread):
                 # need to know which version we're running under and handle it
                 # accordingly.
 
-                ver, meh, meh = platform.python_version_tuple()
+                ver, _, _ = platform.python_version_tuple()
                 if resp_code == 200:
                     if int(ver) == 2:
                         # This will fail for a non-200 resp code, and 
@@ -288,7 +289,7 @@ class StreamConsumer_HTTP_Thread(Thread):
         """
         Read a chunk of up to 'bytes' bytes from the socket.
         """
-        ready_to_read, ready_to_write, in_error = select.select([self._sock], [], [self._sock], 1)
+        ready_to_read, _ready_to_write, in_error = select.select([self._sock], [], [self._sock], 1)
         if len(in_error) > 0:
             raise socket.error('Something went wrong with the socket')
         if len(ready_to_read) > 0:
