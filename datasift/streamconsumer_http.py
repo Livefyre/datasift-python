@@ -3,6 +3,7 @@
 from threading import Thread
 from time import sleep
 import time
+import socket, select, platform
 from datasift import StreamConsumer
 import logging
 import urllib2
@@ -220,7 +221,6 @@ class StreamConsumer_HTTP_Thread(Thread):
                 # including the way we access and use the raw socket, so we
                 # need to know which version we're running under and handle it
                 # accordingly.
-
                 ver, _, _ = platform.python_version_tuple()
                 if resp_code == 200:
                     if int(ver) == 2:
