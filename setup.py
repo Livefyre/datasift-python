@@ -13,8 +13,9 @@ setup(
     description = ("The official DataSift API library for Python."),
     license = "Copyright (C) 2012 by MediaSift Ltd. All Rights Reserved. See LICENSE for the full license.",
     url = "https://github.com/datasift/datasift-python",
-    packages=['datasift', 'tests'],
-    tests_require=['mock>=0.8.0'],
+    packages=['datasift'],
+    tests_require=['mock>=0.8.0', 'nose>=1.2', 'coverage', 'nosexcover'],
+    test_suite = 'nose.collector',
     include_package_data = True,
     platforms='any',
     classifiers=[
