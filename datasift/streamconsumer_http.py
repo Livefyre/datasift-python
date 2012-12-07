@@ -11,6 +11,11 @@ import json
 
 LOG = logging.getLogger(__name__)
 
+# Controls how often an HTTP thread can be restarted.
+# A restart will not happen until this number of seconds
+# has passed since the last one.
+THREAD_RESTART_FREQUENCY = 5
+
 # Try to import ssl for SSLError, fake it if not available
 try:
     import ssl
@@ -54,6 +59,7 @@ class StreamConsumer_HTTP(StreamConsumer):
         """
         StreamConsumer.__init__(self, user, definition, event_handler)
         self._thread = None
+        self._last_restart_time = 0
         
     def on_start(self):
         self._thread = StreamConsumer_HTTP_Thread(self)
@@ -117,8 +123,19 @@ class StreamConsumer_HTTP(StreamConsumer):
         lapse in coverage in-between restarts. 
         See http://dev.datasift.com/docs/streaming-api/switching-streams.
         This is useful when the set of hashes being tracked has been changed.
+        Because a restart is caused each time a hash is added or removed,
+        and because immediate restarts is not required, we aim to limit the number
+        of restarts. To do that, we prevent a restart from happening if another
+        one has happened recently.
         """
         LOG.debug("Restarting thread for the active hashes to change.")
+        # Prevent a restart if another one happened recently.
+        next_restart_allowed = self._last_restart_time + THREAD_RESTART_FREQUENCY
+        if time.time() < next_restart_allowed:
+            LOG.info("Preventing a thread restart: too soon after the previous one."
+                     " Next restart is allowed in %s seconds." % (next_restart_allowed - time.time()))
+            return
+        self._last_restart_time = time.time()
         new_thread = StreamConsumer_HTTP_Thread(self)
         new_thread.start()
         # Ensure that the other thread is active before closing
@@ -128,6 +145,7 @@ class StreamConsumer_HTTP(StreamConsumer):
         # Close the current thread, and swap the new one into its place.
         self._thread.stop()
         self._thread = new_thread
+        LOG.debug("Thread restarted; current hashes are %s", self._hashes)
         
 
     def run_forever(self):
@@ -239,7 +257,7 @@ class StreamConsumer_HTTP_Thread(Thread):
                     # Tell the user's code
                     self._consumer._on_connect()
                     self._has_connected = True
-                    # Start reading and processing the stream
+                    # Start reading and processing the stream
                     self._read_stream()
                 elif resp_code >= 400 and resp_code < 500 and resp_code != 420:
                     # Problem with the request, read the error response and

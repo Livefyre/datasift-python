@@ -1426,9 +1426,6 @@ class StreamConsumer(object):
         else:
             raise InvalidDataError('The definition must be a CSDL string, an array of hashes or a Definition object.')
 
-        if len(self._hashes) == 0:
-            raise InvalidDataError('No valid hashes found when creating the consumer.');
-
         self._event_handler = event_handler
 
     def consume(self, auto_reconnect = True):
@@ -1455,7 +1452,13 @@ class StreamConsumer(object):
         if self._user.use_ssl():
             protocol = 'https'
         if isinstance(self._hashes, list):
-            return "%s://%smulti?hashes=%s" % (protocol, STREAM_BASE_URL, ','.join(self._hashes))
+            # Enable the client to connect to a multistream with an empty initial list
+            # of hashes. This will be used for dynamic stream updating.
+            # See http://dev.datasift.com/docs/streaming-api/multiple-streams.
+            if not self._hashes:
+                return "%s://%smulti" % (protocol, STREAM_BASE_URL)
+            else:
+                return "%s://%smulti?hashes=%s" % (protocol, STREAM_BASE_URL, ','.join(self._hashes))
         else:
             return "%s://%s%s" % (protocol, STREAM_BASE_URL, self._hashes)
 
