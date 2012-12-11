@@ -14,7 +14,7 @@ LOG = logging.getLogger(__name__)
 # Controls how often an HTTP thread can be restarted.
 # A restart will not happen until this number of seconds
 # has passed since the last one.
-THREAD_RESTART_FREQUENCY = 5
+THREAD_RESTART_FREQUENCY = 0
 
 # Try to import ssl for SSLError, fake it if not available
 try:
@@ -59,9 +59,11 @@ class StreamConsumer_HTTP(StreamConsumer):
         """
         StreamConsumer.__init__(self, user, definition, event_handler)
         self._thread = None
+        self.stop_requested = False
         self._last_restart_time = 0
         
     def on_start(self):
+        self.stop_requested = False
         self._thread = StreamConsumer_HTTP_Thread(self)
         self._thread.start()
 
@@ -117,6 +119,9 @@ class StreamConsumer_HTTP(StreamConsumer):
         self.restart_thread()
         return True
         
+    def stop(self):
+        super.stop()
+        self.stop_requested = True
     
     def restart_thread(self):
         """Restarts the current thread safely, ensuring that there is no
@@ -150,16 +155,16 @@ class StreamConsumer_HTTP(StreamConsumer):
 
     def run_forever(self):
         """Main driver loop of this Consumer. Every one second, test to see whether
-        the underlying thread is still running; if so, there's nothing to do.
-        Otherwise (or if there is a keyboard event), exits.
+        the underlying thread is still running, and whether stopping has not be requested.
+        If both of these are OK, there's nothing to do. Otherwise exits.
         """
-        while True:
+        while not self.stop_requested:
             if not self.join_thread(1):
                 return
             try:
                 pass
             except KeyboardInterrupt:
-                self.stop()
+                return
             except BaseException as err:
                 # Not much we can do here, but log and continue.
                 LOG.error("An unexpected exception has happened in the DataSift Consumer"
