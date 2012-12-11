@@ -79,13 +79,13 @@ class StreamConsumer_HTTP(StreamConsumer):
         self._thread.join(timeout)
         return True
 
-    def add_hash(self, hash): #@ReservedAssignment
-        self.add_or_remove_hash(hash, is_add=True)
+    def add_hash(self, hash, force_restart=True): #@ReservedAssignment
+        self.add_or_remove_hash(hash, is_add=True, force_restart=force_restart)
     
-    def remove_hash(self, hash): #@ReservedAssignment
-        self.add_or_remove_hash(hash, is_add=False)
+    def remove_hash(self, hash, force_restart=True): #@ReservedAssignment
+        self.add_or_remove_hash(hash, is_add=False, force_restart=force_restart)
         
-    def add_or_remove_hash(self, hash, is_add): #@ReservedAssignment
+    def add_or_remove_hash(self, hash, is_add, force_restart=True): #@ReservedAssignment
         """Attempts to add or remove tracking for the specified hash.
         If that hash is already being tracked and addition is requested, or if
         that hash is not currently tracked and removal is requested, has no effect
@@ -93,6 +93,11 @@ class StreamConsumer_HTTP(StreamConsumer):
         the required operation and returns True. Any low-level service exceptions will
         be propagated. Note that incorrect hashes are not easily detectable, as DataSift
         appears to just ignore them.
+        :param force_restart: If set to True, will cause the thread to restart after modifying
+            the set of hashes. Otherwise, there will be no restart. Note that until restart
+            happens - whether from a later add or remove, or from an explicit restart,
+            the thread implementing DataSift connection will not be changed. This is useful
+            if one wants to batch several add or remove operations.
         """
         LOG.debug("Currently active consumer hashes are %s." % self._hashes)
         if hash in self._hashes and is_add:
@@ -109,8 +114,9 @@ class StreamConsumer_HTTP(StreamConsumer):
                 self._hashes.remove(hash)
         except Exception:
             return False
-        # Restart the thread for the changes to take effect.
-        self.restart_thread()
+        # Restart the thread for the changes to take effect, if that was requested.
+        if force_restart:
+            self.restart_thread()
         return True
         
     def stop(self):
