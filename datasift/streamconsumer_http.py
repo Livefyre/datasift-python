@@ -11,11 +11,6 @@ import json
 
 LOG = logging.getLogger(__name__)
 
-# Controls how often an HTTP thread can be restarted.
-# A restart will not happen until this number of seconds
-# has passed since the last one.
-THREAD_RESTART_FREQUENCY = 0
-
 # Try to import ssl for SSLError, fake it if not available
 try:
     import ssl
@@ -60,7 +55,6 @@ class StreamConsumer_HTTP(StreamConsumer):
         StreamConsumer.__init__(self, user, definition, event_handler)
         self._thread = None
         self.stop_requested = False
-        self._last_restart_time = 0
         
     def on_start(self):
         self.stop_requested = False
@@ -120,7 +114,7 @@ class StreamConsumer_HTTP(StreamConsumer):
         return True
         
     def stop(self):
-        super.stop()
+        #super.stop()
         self.stop_requested = True
     
     def restart_thread(self):
@@ -128,19 +122,8 @@ class StreamConsumer_HTTP(StreamConsumer):
         lapse in coverage in-between restarts. 
         See http://dev.datasift.com/docs/streaming-api/switching-streams.
         This is useful when the set of hashes being tracked has been changed.
-        Because a restart is caused each time a hash is added or removed,
-        and because immediate restarts is not required, we aim to limit the number
-        of restarts. To do that, we prevent a restart from happening if another
-        one has happened recently.
         """
         LOG.debug("Restarting thread for the active hashes to change.")
-        # Prevent a restart if another one happened recently.
-        next_restart_allowed = self._last_restart_time + THREAD_RESTART_FREQUENCY
-        if time.time() < next_restart_allowed:
-            LOG.info("Preventing a thread restart: too soon after the previous one."
-                     " Next restart is allowed in %s seconds." % (next_restart_allowed - time.time()))
-            return
-        self._last_restart_time = time.time()
         new_thread = StreamConsumer_HTTP_Thread(self)
         new_thread.start()
         # Ensure that the other thread is active before closing
