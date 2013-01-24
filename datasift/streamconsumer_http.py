@@ -268,7 +268,7 @@ class StreamConsumer_HTTP_Thread(Thread):
                             self._consumer._on_error(data['message'])
                         else:
                             self._consumer._on_error('Hash not found')
-                    # Do not atttempt to reconnect
+                    # Do not attempt to reconnect
                     break
                 else:
                     raise ExponentialBackoffError('Received %s response' % resp_code)
@@ -281,7 +281,8 @@ class StreamConsumer_HTTP_Thread(Thread):
                     self._consumer._on_error('%s, no more retries' % str(e))
                     break
                 self._consumer._on_warning('%s, retrying in %s seconds' % (str(e), connection_delay))
-            except LinearBackoffError, e:
+            #except LinearBackoffError, e:
+            except Exception, e:    
                 if connection_delay < 16:
                     connection_delay += 1
                     self._consumer._on_warning('Connection failed (%s), retrying in %s seconds' % (str(e), connection_delay))
@@ -325,7 +326,6 @@ class StreamConsumer_HTTP_Thread(Thread):
             pos = self._buffer.find('\n')
         else:
             pos = length
-
         retval = self._buffer[0:pos]
         self._buffer = self._buffer[pos+1:]
         return retval
