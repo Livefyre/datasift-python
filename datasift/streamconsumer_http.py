@@ -1,15 +1,19 @@
 # encoding: utf-8
 
+import json
+import logging
+import socket, select, platform
 from threading import Thread
 from time import sleep
 import time
-import socket, select, platform
-from datasift import StreamConsumer
-import logging
 import urllib2
-import json
+
+from datasift import StreamConsumer
+
 
 LOG = logging.getLogger(__name__)
+RAW_LOG = logging.getLogger('datasift.raw')
+CHUNK_LOG = logging.getLogger('datasift.chunk')
 
 # Try to import ssl for SSLError, fake it if not available
 try:
@@ -18,11 +22,13 @@ except ImportError:
     class ssl(object):
         SSLError = None
 
+
 def factory(user, definition, event_handler):
     """
     Factory function for creating an instance of this class.
     """
     return StreamConsumer_HTTP(user, definition, event_handler)
+
 
 class LinearBackoffError(Exception):
     """
@@ -32,6 +38,7 @@ class LinearBackoffError(Exception):
     """
     pass
 
+
 class ExponentialBackoffError(Exception):
     """
     This exception is thrown within the consumer when an error occurs after
@@ -39,6 +46,7 @@ class ExponentialBackoffError(Exception):
     exponential backing off algorithm.
     """
     pass
+
 
 #---------------------------------------------------------------------------
 # The StreamConsumer_HTTP class
@@ -55,13 +63,13 @@ class StreamConsumer_HTTP(StreamConsumer):
         StreamConsumer.__init__(self, user, definition, event_handler)
         self._thread = None
         self.stop_requested = False
-        
+
     def on_start(self):
         self.stop_requested = False
         self._thread = StreamConsumer_HTTP_Thread(self)
         self._thread.start()
 
-    def join_thread(self, timeout = None):
+    def join_thread(self, timeout=None):
         """Periodically called to test to see whether the underlying thread
         (that's actually doing the stream consuming) is active. Returns True
         iff it is.
@@ -73,19 +81,19 @@ class StreamConsumer_HTTP(StreamConsumer):
         # it has terminated (likely because of an error).
         if not self._thread.is_alive():
             return False
-        # Otherwise, the thread is active. Try joining it, blocking for the 
+        # Otherwise, the thread is active. Try joining it, blocking for the
         # specified timeout (or, in the very unlikely event it does actually
         # terminate, until it does)
         self._thread.join(timeout)
         return True
 
-    def add_hash(self, hash, force_restart=True): #@ReservedAssignment
+    def add_hash(self, hash, force_restart=True): # @ReservedAssignment
         self.add_or_remove_hash(hash, is_add=True, force_restart=force_restart)
-    
-    def remove_hash(self, hash, force_restart=True): #@ReservedAssignment
+
+    def remove_hash(self, hash, force_restart=True): # @ReservedAssignment
         self.add_or_remove_hash(hash, is_add=False, force_restart=force_restart)
-        
-    def add_or_remove_hash(self, hash, is_add, force_restart=True): #@ReservedAssignment
+
+    def add_or_remove_hash(self, hash, is_add, force_restart=True): # @ReservedAssignment
         """Attempts to add or remove tracking for the specified hash.
         If that hash is already being tracked and addition is requested, or if
         that hash is not currently tracked and removal is requested, has no effect
@@ -118,14 +126,14 @@ class StreamConsumer_HTTP(StreamConsumer):
         if force_restart:
             self.restart_thread()
         return True
-        
+
     def stop(self):
-        #super.stop()
+        # super.stop()
         self.stop_requested = True
-    
+
     def restart_thread(self):
         """Restarts the current thread safely, ensuring that there is no
-        lapse in coverage in-between restarts. 
+        lapse in coverage in-between restarts.
         See http://dev.datasift.com/docs/streaming-api/switching-streams.
         This is useful when the set of hashes being tracked has been changed.
         """
@@ -140,7 +148,6 @@ class StreamConsumer_HTTP(StreamConsumer):
         self._thread.stop()
         self._thread = new_thread
         LOG.debug("Thread restarted; current hashes are %s", self._hashes)
-        
 
     def run_forever(self):
         """Main driver loop of this Consumer. Every one second, test to see whether
@@ -160,8 +167,9 @@ class StreamConsumer_HTTP(StreamConsumer):
                           " (possibly in the event handler). Consumer will attempt to resume."
                           " Error is %s and its message is %s.", err, err.message)
 
+
 class StreamConsumer_HTTP_Thread(Thread):
-    def __init__(self, consumer, auto_reconnect = True):
+    def __init__(self, consumer, auto_reconnect=True):
         Thread.__init__(self)
         self._consumer = consumer
         self._auto_reconnect = auto_reconnect
@@ -177,18 +185,17 @@ class StreamConsumer_HTTP_Thread(Thread):
         # stop the old HTTP thread.
         self._has_connected = False
         # Initially False; flips to true when the parent thread has indicated
-        # that this HTTP thread needs to close, as it has been replaced by 
+        # that this HTTP thread needs to close, as it has been replaced by
         # the newer one.
         self._stop_requested = False
-        
+
     def stop(self):
         """Requests that this thread is stopped. This is done when the parent
         thread (i.e., the Consumer) needs to start a new thread with newer
         set of hashes.
         """
         self._stop_requested = True
-        
-        
+
     def run(self):
         """
         Connect and consume the data. If connection fails we back off a bit
@@ -215,7 +222,16 @@ class StreamConsumer_HTTP_Thread(Thread):
                 except urllib2.URLError as err:
                     self._consumer._on_error('Connection failed: %s' % err)
                     break
-                
+
+                connected_str = '%s CONNECTED %s' % ('*' * 50, '*' * 50)
+                RAW_LOG.info(connected_str)
+                CHUNK_LOG.info(connected_str)
+
+                RAW_LOG.info('CONNECTION INFO: %s' % resp.__dict__)
+                RAW_LOG.info('CODE: %s' % resp.getcode())
+                RAW_LOG.info('URL: %s' % resp.url)
+                RAW_LOG.info('HEADERS: %s' % resp.headers)
+
                 # Determine whether the data will be chunked
                 resp_info = resp.info()
                 if 'Transfer-Encoding' in resp_info and resp_info['Transfer-Encoding'].find('chunked') != -1:
@@ -225,18 +241,18 @@ class StreamConsumer_HTTP_Thread(Thread):
                 resp_code = resp.getcode()
 
                 # Get the raw socket. Both urllib2 and httplib buffer data which
-                # was causing a bug where low throughput streams would appear
+                #  was causing a bug where low throughput streams would appear
                 # to not deliver interactions (until enough data had been
                 # received to trigger a buffer flush). By using the raw socket
                 # directly we bypass that buffering and receive all data in
                 # realtime. Lots of stuff was changed between python v2 and v3,
                 # including the way we access and use the raw socket, so we
-                # need to know which version we're running under and handle it
-                # accordingly.
+                #  need to know which version we're running under and handle it
+                #  accordingly.
                 ver, _, _ = platform.python_version_tuple()
                 if resp_code == 200:
                     if int(ver) == 2:
-                        # This will fail for a non-200 resp code, and 
+                        # This will fail for a non-200 resp code, and
                         # correspondingly an HTTPError response.
                         self._sock = resp.fp._sock.fp._sock
                     else:
@@ -262,11 +278,15 @@ class StreamConsumer_HTTP_Thread(Thread):
                     try:
                         data = json.loads(json_data)
                     except:
-                        self._consumer._on_error('Connection failed: %d [no error message]' % (resp_code))
+                        msg = 'Connection failed: %d [no error message]' % (resp_code)
+                        RAW_LOG.info(msg)
+                        self._consumer._on_error(msg)
                     else:
                         if data and 'message' in data:
+                            RAW_LOG.info(data['message'])
                             self._consumer._on_error(data['message'])
                         else:
+                            RAW_LOG.info('Hash not found')
                             self._consumer._on_error('Hash not found')
                     # Do not attempt to reconnect
                     break
@@ -278,16 +298,24 @@ class StreamConsumer_HTTP_Thread(Thread):
                 elif connection_delay < 320:
                     connection_delay *= 2
                 else:
-                    self._consumer._on_error('%s, no more retries' % str(e))
+                    msg = '%s, no more retries' % str(e)
+                    RAW_LOG.info(msg)
+                    self._consumer._on_error(msg)
                     break
-                self._consumer._on_warning('%s, retrying in %s seconds' % (str(e), connection_delay))
-            #except LinearBackoffError, e:
-            except Exception, e:    
+                msg = '%s, retrying in %s seconds' % (str(e), connection_delay)
+                RAW_LOG.info(msg)
+                self._consumer._on_warning(msg)
+            # except LinearBackoffError, e:
+            except Exception, e:
                 if connection_delay < 16:
                     connection_delay += 1
-                    self._consumer._on_warning('Connection failed (%s), retrying in %s seconds' % (str(e), connection_delay))
+                    msg = 'Connection failed (%s), retrying in %s seconds' % (str(e), connection_delay)
+                    RAW_LOG.info(msg)
+                    self._consumer._on_warning(msg)
                 else:
-                    self._consumer._on_error('Connection failed (%s), no more retries' % (str(e)))
+                    msg = 'Connection failed (%s), no more retries' % (str(e))
+                    RAW_LOG.info(msg)
+                    self._consumer._on_error(msg)
                     break
 
         if self._sock:
@@ -298,7 +326,7 @@ class StreamConsumer_HTTP_Thread(Thread):
         if not self._stop_requested:
             self._consumer._on_disconnect()
 
-    def _raw_read(self, bytes = 16384):  #@ReservedAssignment
+    def _raw_read(self, bytes=16384): # @ReservedAssignment
         """
         Read a chunk of up to 'bytes' bytes from the socket.
         """
@@ -308,13 +336,14 @@ class StreamConsumer_HTTP_Thread(Thread):
         if len(ready_to_read) > 0:
             try:
                 data = self._sock.recv(bytes)
+                RAW_LOG.info(data)
                 if len(data) > 0:
                     # Strip carriage returns to make splitting lines easier
                     self._buffer += data.replace('\r', '')
             except (socket.error, ssl.SSLError), e:
                 raise LinearBackoffError(str(e))
 
-    def _raw_read_chunk(self, length = 0):
+    def _raw_read_chunk(self, length=0):
         """
         If length is passed as 0 we read to the next newline, otherwise we
         read until the buffer contains at least length bytes.
@@ -327,7 +356,8 @@ class StreamConsumer_HTTP_Thread(Thread):
         else:
             pos = length
         retval = self._buffer[0:pos]
-        self._buffer = self._buffer[pos+1:]
+        CHUNK_LOG.info(retval)
+        self._buffer = self._buffer[pos + 1:]
         return retval
 
     def _read_chunk(self):

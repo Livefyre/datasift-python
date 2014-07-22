@@ -30,6 +30,7 @@ __author__  = "Stuart Dallas <stuart@3ft9.com>"
 __status__  = "beta"
 __version__ = "0.6.0c"
 __date__    = "30 August 2012"
+__version__ = "0.6.0d"
 
 #-----------------------------------------------------------------------------
 # Add this folder to the system path.
